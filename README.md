@@ -23,18 +23,19 @@ no network — one `wsl.exe` process per copy.
 
 Two kinds of content are handled:
 
-- **Images** (screenshots, `Ctrl+C` on image data) — decoded via .NET's
-  `Clipboard.GetImage()`, which handles the `BI_BITFIELDS` DIB variant
-  itself, re-encoded as a normal PNG, and set as `image/png` on the
-  Linux clipboard.
-- **Files** (`Ctrl+C` on any file in Explorer) — no re-encoding; the
-  Linux clipboard gets a `text/uri-list` entry pointing at the file's
-  own WSL-mounted path (`file:///mnt/c/...`). This is the
-  freedesktop-standard MIME type for "here is a file", understood by
-  GTK file managers and by Claude Desktop's paste handler. If the
-  dropped file happens to be a recognized image extension
-  (`.png`/`.jpg`/`.jpeg`/`.bmp`/`.gif`/`.tif`/`.tiff`), it's decoded and
-  sent as `image/png` instead, same as a direct image copy.
+- **Raw image data** (screenshots, "Copy image" in a browser — anything
+  that isn't a file) — decoded via .NET's `Clipboard.GetImage()`, which
+  handles the `BI_BITFIELDS` DIB variant itself, re-encoded as a normal
+  PNG, and set as `image/png` on the Linux clipboard. There's no
+  original file to reference here, so this is the one case that
+  actually decodes/re-encodes.
+- **Files** (`Ctrl+C` on one or more files in Explorer — image files
+  included) — no decoding, no re-encoding, ever. The Linux clipboard
+  gets a `text/uri-list` entry: one `file:///mnt/c/...` URI per file,
+  pointing at each file's own WSL-mounted path unchanged. This is the
+  freedesktop-standard MIME type for "here are one or more files",
+  understood by GTK file managers and by Claude Desktop's paste
+  handler.
 
 ## Architecture
 
@@ -131,11 +132,11 @@ sudo apt update && sudo apt install -y xclip wl-clipboard
 ## Testing
 
 1. Build and run the Windows watcher (see above).
-2. Copy a screenshot on Windows (`Win+Shift+S`), or `Ctrl+C` a file in
-   Explorer.
+2. Copy a screenshot on Windows (`Win+Shift+S`), or `Ctrl+C` one or more
+   files in Explorer (any type, images included).
 3. On the Linux side: `xclip -selection clipboard -t TARGETS -o` should
-   list `image/png` (screenshot/image file) or `text/uri-list` (any
-   other file).
+   list `image/png` (screenshot / raw clipboard image data) or
+   `text/uri-list` (anything copied as a file, images included).
 4. Paste (`Ctrl+V`) into Claude Desktop (or any GUI app) inside WSL.
 
 Debug log (every clipboard event, the `wsl.exe` exit code, stdout/stderr)
@@ -165,6 +166,9 @@ default, never widen it.
 - Identical consecutive clipboard content (by hash) is not re-sent,
   since some apps fire `WM_CLIPBOARDUPDATE` more than once per copy
   while adding clipboard formats incrementally.
-- `Ctrl+C` on multiple files at once: only the first file in the drop
-  list is used (first recognized image, or the first file overall if
-  none are images).
+- `Ctrl+C` on multiple files at once: all of them are sent, one
+  `file://` URI per line in the same `text/uri-list` entry. Whether a
+  given Linux app treats that as multiple attachments is up to the
+  app — Claude Desktop's compose UI has shown visual duplication (extra
+  thumbnails) with 3+ files at once, though the files themselves attach
+  correctly.
